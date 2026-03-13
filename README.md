@@ -85,9 +85,19 @@ $func = [Researcher]::GetProcAddress($k32, "WinExec")
 
 Write-Host "[!] Identity Breach Successful on PID $($Victim.Id)" -ForegroundColor Green
 ```
+## The Kernel Sentinel: HallowAirlock.sys
+To validate my research, I developed a custom kernel-mode driver, `HallowAirlock.sys`. The goal was not to assist the attack, but to provide a "God View" of the VM's memory and process state that user-mode security tools often miss. 
+
+By sitting in Ring 0, `HallowAirlock.sys` allowed me to monitor the lifecycle of the hallow from the inside out, ensuring I could verify exactly when and where the "Stain" was being applied.
+
+### 1. Monitoring the Handover
+The driver uses **PsSetCreateThreadNotifyRoutine**. This allows it to see every new thread born in the system. While an EDR might see a legitimate process like `cmd.exe` running, `HallowAirlock.sys` flags the thread the moment it starts at a suspicious, exported API like `WinExec` instead of a standard entry point.
+
+### 2. Validating the "Stain"
+Using the driver, I can perform a deep dive into the **EPROCESS** structure of the victim. By walking the Virtual Address Descriptor (VAD) tree, the driver can identify memory regions that have been modified to be executable but are not backed by a signed file on disk.
 
 ## Forensic Investigation: Proving the Breach
-To verify the success of the injection, I used a combination of Process Hacker and WinDbg to uncover the "Forensic Fingerprint" left behind.
+To verify the success of the injection, I used HallowAirlock.sys telemetry alongside Process Hacker and WinDbg to uncover the "Forensic Fingerprint" left behind by the hijacking.
 
 ### 1. The Thread "Ghost" (Process Hacker)
 While monitoring the **Threads** tab in Process Hacker, I caught the exact moment of the handover. A new thread appeared that did not belong to the original process logic. 
@@ -99,7 +109,7 @@ The giveaway was the **Start Address.** Most legitimate threads in cmd.exe start
 Furthermore, the **Call Stack** for this thread was "shallow." In a legitimate execution, you would see a deep chain of function calls leading back to the main executable. Here, the thread was essentially "born in a vacuum," a primary indicator that the execution was forced by an external actor.
 
 ### 2. The Memory "Stain" (Process Hacker)
-In the **Memory** tab, I identified a 4KB region marked as **Private Data** and **RWX** (Read, Write, Execute). This is a textbook indicator of an unmapped memory segment. In a healthy process, executable memory should almost always be "Image" memory, meaning it is backed by a verified file on the disk. A standalone RWX block is a "Stain" that represents unauthorized intent.
+In the Memory tab, I identified a 4KB region marked as Private Data and RWX. This matched the telemetry from HallowAirlock.sys perfectly: it was an unmapped, executable memory segment used for staging command strings.
 
 ### 3. The 24H2 Taxonomy: Security Tier Analysis
 My research across different Windows 11 24H2 processes revealed that the "Identity" I chose to hijack determined the success of the breach. This taxonomy highlights the layering of modern Windows defenses:
