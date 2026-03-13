@@ -122,11 +122,5 @@ My research across different Windows 11 24H2 processes revealed that the "Identi
 
 ---
 
-## Conclusion: Trust is Not Static
-The primary takeaway from this research is that **trust should not be a one time event.** A binary that is trusted at startup can be subverted in memory seconds later. 
-
-This is where the limitation of traditional "Border Control" security becomes clear. If an AAL solution only validates a file at launch, it creates a window of opportunity for "Shadow Identities" to operate. 
-
-
-
-True security, as pioneered by solutions like Airlock Digital, requires a move toward **Runtime Integrity.** We must transition from asking "Is this file allowed?" to "Is this process identity still acting with integrity?" By monitoring the lifecycle of the identity, rather than just the signature on the disk, we can close the gap that Process Hallowing seeks to exploit.
+## Conclusion
+Working on.
