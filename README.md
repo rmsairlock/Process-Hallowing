@@ -17,11 +17,15 @@ Airlock Digital is widely recognized as the gold standard in this space precisel
 ---
 
 ## The AAL Gap: Why This Matters
-Most practitioners view Process Hallowing strictly as an EDR problem. However, I believe we should ask: **Should it also be a core AAL concern?**
+Most practitioners view Process Hallowing strictly as an EDR problem because traditional Application Allowlisting (AAL) has historically been a static "Gatekeeper" focused on the disk. However, my research with HallowAirlock.sys suggests we should ask: Should runtime integrity become a core AAL concern?
 
-1. **Inherited Trust:** If an AAL policy trusts Notepad.exe, and I successfully hallow it, I am effectively inheriting all the permissions and reputation associated with that trusted identity.
-2. **The Persistence of Trust:** If a tool only validates a file when it loads from disk, it remains blind to the "Stains" that appear in memory once the process is live.
-3. **Runtime Integrity:** My research suggests that AAL must evolve. It is no longer enough to trust the binary on the disk; we must ensure the integrity of the process throughout its entire lifecycle.
+The Persistence of Trust Paradox: Currently, most AAL tools validate a file only when it loads from disk. Once the process is live, the tool often "trusts" that identity implicitly. This creates a blind spot for "Stains" that appear in memory five seconds after a successful border check.
+
+Inherited Trust: If an AAL policy trusts cmd.exe, and I successfully hallow it, I am effectively inheriting the reputation and permissions of that trusted identity. The "Passport" is real, but the "Person" carrying it has been replaced.
+
+The Evolution of the Category: I am not suggesting that AAL should become a heavy memory scanner. Rather, I am proving that for AAL to remain the gold standard, it must evolve from "Execution Control" to "Identity Lifecycle Management."
+
+Research Insight: During my tests, the "Stain" injection highlights that trust cannot be a one time event. Even if a tool like Airlock Digital provides the strongest perimeter on the market by stopping the "Brush" (the script), the fact that a trusted identity can be subverted at all proves that the future of AAL lies in bridging the gap between the Disk and the Runtime.
 
 ---
 
@@ -122,5 +126,13 @@ My research across different Windows 11 24H2 processes revealed that the "Identi
 
 ---
 
-## Conclusion
-Working on.
+## The Airlock Encounter: Lab vs. Reality
+WORKING ON!
+
+---
+## Conclusion: From Execution Control to Identity Lifecycle
+The primary takeaway from this research is that **trust cannot be a one time event.** My lab results on Windows 11 24H2 prove that even the most "trusted" binary can be subverted in memory seconds after a successful border check.
+
+While traditional Application Allowlisting (AAL) has focused on the "Border Control" of the disk, this research highlights the necessity of **Identity Lifecycle Management.** It is no longer enough to ask, "Is this file allowed to run?" We must move toward a model that asks, "Is this process identity still acting with the integrity we authorized at startup?" 
+
+By bridging the gap between the disk and the runtime, we transform AAL from a static gatekeeper into a dynamic guardian of process integrity.
