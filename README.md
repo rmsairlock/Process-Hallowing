@@ -1,5 +1,11 @@
 # Shadow Identities: A Researcher's Guide to Process Hallowing
 
+>**Author:** Rob Shiplo - Sr Research Engineer - Systems & Endpoint Security @ Airlock Digital
+>
+>**Published:** March 2026 | **Platform:** Windows
+
+---
+
 ## The "Border Control" Fallacy
 In the world of Application Allowlisting (AAL), the philosophy has traditionally been straightforward: **If a binary is signed and trusted, it is allowed to run.** This approach is highly effective for stopping a user from executing an untrusted .exe downloaded from the web.
 
