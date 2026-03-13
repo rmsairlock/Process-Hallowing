@@ -131,8 +131,8 @@ WORKING ON!
 
 ---
 ## Conclusion: From Execution Control to Identity Lifecycle
-The primary takeaway from this research is that **trust cannot be a one time event.** My lab results on Windows 11 24H2 prove that even the most "trusted" binary can be subverted in memory seconds after a successful border check.
+While traditional allowlisting is often relegated to a static pre-execution check, my research highlights a critical architectural blind spot. If our 'Trust' is based solely on a disk-bound signature or hash, that trust becomes a weapon in the hands of a hallowing attack.
 
-While traditional Application Allowlisting (AAL) has focused on the "Border Control" of the disk, this research highlights the necessity of **Identity Lifecycle Management.** It is no longer enough to ask, "Is this file allowed to run?" We must move toward a model that asks, "Is this process identity still acting with the integrity we authorized at startup?" 
+By demonstrating the 'Stain' on a live VM, I am proving that the next generation of AAL must move beyond the disk. To truly protect an identity, the allowlisting philosophy must extend into the runtime. We shouldn't just be 'Allowing an Executable'; we should be 'Authorizing a Process State'.
 
-By bridging the gap between the disk and the runtime, we transform AAL from a static gatekeeper into a dynamic guardian of process integrity.
+The "Gap" remains if you were to use a "Trusted" tool (like a vulnerable signed driver or an allowed admin tool) to perform the hallow.
