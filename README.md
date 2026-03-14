@@ -143,7 +143,7 @@ To verify the success of the injection, I used HallowAirlock.sys telemetry along
 ### 1. The Thread "Ghost" (Process Hacker)
 While monitoring the **Threads** tab in Process Hacker, I caught the exact moment of the handover. A new thread appeared that did not belong to the original process logic. 
 
-The giveaway was the **Start Address.** Most legitimate threads in cmd.exe start within its own code or standard system workers. My hallowed thread, however, started directly at `kernel32.dll!WinExec`. This is an immediate red flag: a trusted process is suddenly birthing a thread directly into an execution API. 
+The giveaway was the **Start Address.** Most legitimate threads in cmd.exe start within its own code or standard system workers. My hallowed thread, however, started directly at `kernel32.dll!WinExec`. This is an immediate red flag: a trusted process is suddenly spawning a thread directly into an execution API. 
 
 
 
