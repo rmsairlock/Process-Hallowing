@@ -36,7 +36,7 @@ The short answer: it largely does not.
 During my research on Windows 11 24H2, I discovered that Microsoft has significantly hardened the gates. My attempts to hallow different processes revealed a clear hierarchy of protection:
 
 * **CalculatorApp.exe (The Fortress):** Modern UWP apps run in an **AppContainer.** Even when I successfully injected code, the process identity was so restricted that it could not spawn a shell or write to public folders.
-* **Notepad.exe (The Hybrid):** Notepad has moved toward a more modernized architecture. I hit significant roadblocks with **Control Flow Guard (CFG)** when trying to hijack its execution flow, however usable - I wanted to do more.
+* **Notepad.exe (The Hybrid):** Notepad has moved toward a more modernized architecture. I hit significant roadblocks with **Control Flow Guard (CFG)** when trying to hijack its execution flow, and consider this target partially resolved — worth revisiting in future research.
 * **Cmd.exe (The Classic):** This proved to be the ideal research target. As a "Medium Integrity" process without AppContainer restrictions, it allowed the hallowed identity to perform functional tasks without kernel intervention.
 
 #### 24H2 Internals: NtCreateThreadEx Argument Passing
@@ -126,6 +126,7 @@ The key signal: legitimate threads in `cmd.exe` start within the process's own i
 ### 2. VAD Tree Walking for Unmapped Executable Memory
 
 Using the driver, I walked the **Virtual Address Descriptor (VAD)** tree of the victim process to identify the memory "Stain" independent of any user-mode report.
+
 ```c
 // Simplified: identify RWX private regions with no file backing
 if (vad->u.VadFlags.Protection == PAGE_EXECUTE_READWRITE 
@@ -143,15 +144,15 @@ I also attempted to subscribe to the **Microsoft-Windows-Threat-Intelligence** p
 
 A significant finding specific to Windows 11 24H2: `EtwTiLogCreateRemoteThread` no longer exists as an exported kernel symbol. Microsoft has consolidated remote thread telemetry into `EtwTiLogSetContextThread`. Any driver or detection rule targeting the old symbol name will silently miss injection events on this build. Detection logic needs to be updated accordingly.
 
+---
+
 ## Forensic Investigation: Proving the Breach
 To verify the success of the injection, I used HallowAirlock.sys telemetry alongside Process Hacker and WinDbg to uncover the "Forensic Fingerprint" left behind by the hijacking.
 
 ### 1. The Thread "Ghost" (Process Hacker)
 While monitoring the **Threads** tab in Process Hacker, I caught the exact moment of the handover. A new thread appeared that did not belong to the original process logic. 
 
-The giveaway was the **Start Address.** Most legitimate threads in cmd.exe start within its own code or standard system workers. My hallowed thread, however, started directly at `kernel32.dll!WinExec`. This is an immediate red flag: a trusted process is suddenly spawning a thread directly into an execution API. 
-
-
+The giveaway was the **Start Address.** Most legitimate threads in cmd.exe start within its own code or standard system workers. My hallowed thread, however, started directly at `kernel32.dll!WinExec`. This is an immediate red flag: a trusted process is suddenly spawning a thread directly into an execution API.
 
 Furthermore, the **Call Stack** for this thread was "shallow." In a legitimate execution, you would see a deep chain of function calls leading back to the main executable. Here, the thread started in isolation with no traceable call chain back to the process's own code, a primary indicator that the execution was forced by an external actor.
 
@@ -161,6 +162,7 @@ In the Memory tab, I identified a 4KB region marked as Private Data and RWX. Thi
 ### 3. WinDbg: Ground Truth Confirmation
 
 Process Hacker confirmed the userland view. WinDbg confirmed the kernel view. With KDNET attached to the VM, I used the following to independently verify the breach:
+
 ```text
 # Locate the victim process and confirm integrity level
 !process 0 0 cmd.exe
@@ -170,6 +172,7 @@ Process Hacker confirmed the userland view. WinDbg confirmed the kernel view. Wi
 The token inspection confirmed **Medium Integrity (S-1-16-8192)** - the expected level for a standard `cmd.exe` session, meaning the hallowed thread inherited a usable security context with no AppContainer restrictions.
 
 To confirm the memory stain directly:
+
 ```text
 db 0x000001e8abf30000 L40
 ```
@@ -195,6 +198,7 @@ To test the "Usability vs. Security" balance, I engineered a bypass using a **Sa
 
 * **The Setup:** I created a writeable directory (`C:\Users\Public\TestSafe`) and added it to the Airlock **Safe Path** policy.
 * **The Compiler Trick:** Rather than letting `Add-Type` choose its own output location (which defaults to `\Temp` and gets killed), I used `CompilerParameters.OutputAssembly` to explicitly direct the C# compiler to emit `HallowHelper.dll` directly into the trusted path:
+
 ```powershell
 $cp = New-Object System.CodeDom.Compiler.CompilerParameters
 $cp.OutputAssembly = "C:\Users\Public\TestSafe\HallowHelper.dll"
@@ -208,6 +212,7 @@ Because the output path was trusted, Airlock permitted the DLL to materialize. T
 ### 3. The Reflection Handover
 
 Once the DLL was materialized in the trusted path, the script loaded it using raw bytes rather than a path reference:
+
 ```powershell
 $Bytes = [System.IO.File]::ReadAllBytes("C:\Users\Public\TestSafe\HallowHelper.dll")
 [System.Reflection.Assembly]::Load($Bytes)
