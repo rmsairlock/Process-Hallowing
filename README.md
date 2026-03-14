@@ -39,6 +39,12 @@ During my research on Windows 11 24H2, I discovered that Microsoft has significa
 * **Notepad.exe (The Hybrid):** Notepad has moved toward a more modernized architecture. I hit significant roadblocks with **Control Flow Guard (CFG)** when trying to hijack its execution flow, however usable - I wanted to do more.
 * **Cmd.exe (The Classic):** This proved to be the ideal research target. As a "Medium Integrity" process without AppContainer restrictions, it allowed the hallowed identity to perform functional tasks without kernel intervention.
 
+#### 24H2 Internals: NtCreateThreadEx Argument Passing
+
+During kernel-level analysis, I found that on Windows 11 24H2 (build 26100), `NtCreateThreadEx` no longer passes the target process handle in the expected direct register position. Instead, arguments are passed indirectly via an RSI pointer to a structured argument block. The target handle is resolved internally through `ObpReferenceObjectByHandleWithTag`.
+
+Any tool or driver performing inline hook or breakpoint analysis on `NtCreateThreadEx` that assumes the classic `rcx/rdx/r8` calling convention for the process handle will silently read the wrong value on this build. Detection logic targeting remote thread creation needs to account for this indirection.
+
 ---
 
 ## Technical Anatomy: The Bypass
@@ -152,6 +158,24 @@ Furthermore, the **Call Stack** for this thread was "shallow." In a legitimate e
 ### 2. The Memory "Stain" (Process Hacker)
 In the Memory tab, I identified a 4KB region marked as Private Data and RWX. This matched the telemetry from HallowAirlock.sys perfectly: it was an unmapped, executable memory segment used for staging command strings.
 
+### 3. WinDbg: Ground Truth Confirmation
+
+Process Hacker confirmed the userland view. WinDbg confirmed the kernel view. With KDNET attached to the VM, I used the following to independently verify the breach:
+```text
+# Locate the victim process and confirm integrity level
+!process 0 0 cmd.exe
+!token <token_address>
+```
+
+The token inspection confirmed **Medium Integrity (S-1-16-8192)** - the expected level for a standard `cmd.exe` session, meaning the hallowed thread inherited a usable security context with no AppContainer restrictions.
+
+To confirm the memory stain directly:
+```text
+db 0x000001e8abf30000 L40
+```
+
+This returned the raw ASCII of the injected command string - `cmd.exe /c echo Breach_Verified > ...` - sitting in private RWX memory with no file backing. The stain was physically readable from kernel context, independent of any user-mode report.
+
 ---
 
 ## The Airlock Encounter: Lab vs. Reality
@@ -166,17 +190,38 @@ My initial attempts to execute the hallowing orchestrator in a default, non-priv
 * **PowerShell Constrained Language Mode (CLM):** With CLM active, the environment is effectively "Hallow-Proof." The language restriction prevents the use of Reflection or Win32 APIs, making it impossible for the script to reach out and touch the memory of another process.
 
 ### 2. Identity Materialization
+
 To test the "Usability vs. Security" balance, I engineered a bypass using a **Safe Path**.
 
-* **The Setup:** I utilized a writeable directory (`C:\Users\Public\TestSafe`) and added it to the Airlock **Safe Path** policy. 
-* **The Materialization:** Because the path was trusted, the C# compiler was permitted to persist `HallowHelper.dll` into the public folder. 
-* **The Overrule:** In Airlock, a **Path Rule is the ultimate administrative override.** By placing my activity in this folder, the engine prioritized location-based trust over global restrictions like CLM, allowing the reflective handover to occur.
+* **The Setup:** I created a writeable directory (`C:\Users\Public\TestSafe`) and added it to the Airlock **Safe Path** policy.
+* **The Compiler Trick:** Rather than letting `Add-Type` choose its own output location (which defaults to `\Temp` and gets killed), I used `CompilerParameters.OutputAssembly` to explicitly direct the C# compiler to emit `HallowHelper.dll` directly into the trusted path:
+```powershell
+$cp = New-Object System.CodeDom.Compiler.CompilerParameters
+$cp.OutputAssembly = "C:\Users\Public\TestSafe\HallowHelper.dll"
+$cp.GenerateInMemory = $false
+```
+
+Because the output path was trusted, Airlock permitted the DLL to materialize. The compiler artifact never touched `\Temp` — it landed directly inside the policy boundary.
+
+* **The Overrule:** In Airlock, a **Path Rule is the ultimate administrative override.** By placing the artifact inside the trusted folder, the engine prioritized location-based trust over global restrictions like CLM, allowing the reflective handover to proceed.
 
 ### 3. The Reflection Handover
-Once the Path Rule was active, the script read the raw bytes of the materialized DLL and loaded the assembly directly into memory via `[System.Reflection.Assembly]::Load($Bytes)`. With the language barriers gone, the script successfully called the hallowing "Gates" to hijack the target process.
+
+Once the DLL was materialized in the trusted path, the script loaded it using raw bytes rather than a path reference:
+```powershell
+$Bytes = [System.IO.File]::ReadAllBytes("C:\Users\Public\TestSafe\HallowHelper.dll")
+[System.Reflection.Assembly]::Load($Bytes)
+```
+
+This distinction matters. `Assembly::LoadFrom(path)` triggers path-based loader validation - Airlock can intercept the load at the file path level. `Assembly::Load(byte[])` bypasses that entirely: the assembly is mapped directly from the in-memory byte array, and the loader never re-evaluates the path policy. The DLL is already trusted from materialization; the byte-array load just avoids giving Airlock a second opportunity to check it.
+
+With the language barriers gone, the script successfully called the hallowing Gates to hijack the target process.
 
 ### 4. Beyond the Default: Granular Hardening
+
 It is vital to note that this success occurred under a **default Path Rule configuration**. Airlock provides the granularity to lock these paths down much further. By implementing **Process and Parent-Process rules**, an organization can dictate that only specific binaries (like a signed build tool) are allowed to launch or load artifacts within that path. Once that granularity is enforced, the attack surface for hallowing effectively vanishes.
+
+**Safe Path scenario comparison:**
 
 | Feature | Without Safe Path (Hardened) | With Safe Path (Active) |
 | :--- | :--- | :--- |
@@ -184,6 +229,17 @@ It is vital to note that this success occurred under a **default Path Rule confi
 | **Artifact Creation** | **Blocked** | **Succeeded** |
 | **PowerShell CLM** | **Enforced** | **Overridden** |
 | **Result** | **Secure** | **Breach Verified** |
+
+**Full control stack — what each layer stops:**
+
+| Control | What It Blocks | Bypass Condition |
+| :--- | :--- | :--- |
+| **Script Control (Enforce)** | `.ps1` execution outright | None — hard block at file level |
+| **Deny-by-Default** | Unsigned/untrusted DLL artifacts in `\Temp` | Trusted path write access |
+| **PowerShell CLM** | Reflection, Win32 API access, `Add-Type` | Path Rule override |
+| **Path Rule (default)** | Nothing — grants blanket trust by location | Writeable by standard user |
+| **Path Rule + Parent-Process Rule** | Limits trust to specific signed parent binary | Requires misconfigured parent scope |
+| **Read-only NTFS on Safe Paths** | DLL materialization entirely | Requires elevated write access |
 
 ---
 
@@ -195,4 +251,4 @@ However, the "Airlock Encounter" also highlights the strategic trade-offs compan
 ### The Future of the Category
 To maintain the gold standard, AAL must continue to bridge the gap between the Disk and the Runtime. While Airlock provides the strongest perimeter on the market, there is an opportunity to evolve toward **Context-aware Path Management**. 
 
-By making granular controls (like parent-process associations and temporary developer "lease" rules) easier to manage, organizations can grant technical teams the freedom they need without opening the door to the "Identity Materialization" techniques demonstrated here. Ultimately, true security isn't just about **Allowing an Executable**; it's about **Authorizing a Process State**.
+By making granular controls (like parent-process associations and temporary developer "lease" rules) easier to manage, organizations can grant technical teams the freedom they need without opening the door to the "Identity Materialization" techniques demonstrated here. For example: a Path Rule scoped exclusively to `msbuild.exe` as the parent process, active only during a defined build window, would have prevented every stage of the bypass demonstrated here - the compiler trick, the DLL materialization, and the reflective load - without touching developer workflow at all. Ultimately, true security isn't just about **Allowing an Executable**; it's about **Authorizing a Process State**.
