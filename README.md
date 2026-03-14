@@ -16,16 +16,16 @@ Airlock Digital is widely recognized as the gold standard in this space precisel
 
 ---
 
-## The AAL Gap: Why This Matters
-Most practitioners view Process Hallowing strictly as an EDR problem because traditional Application Allowlisting (AAL) has historically been a static "Gatekeeper" focused on the disk. However, my research with HallowAirlock.sys suggests we should ask: Should runtime integrity become a core AAL concern?
+## The AAL Gap: A Matter of Configuration
+Most practitioners view Process Hallowing strictly as an EDR problem because traditional Application Allowlisting (AAL) is often seen as a static "Gatekeeper" focused on the disk. My research was designed to test this: Can a trusted identity be subverted after the "Border Control" has let it through?
 
-The Persistence of Trust Paradox: Currently, most AAL tools validate a file only when it loads from disk. Once the process is live, the tool often "trusts" that identity implicitly. This creates a blind spot for "Stains" that appear in memory five seconds after a successful border check.
+**The Persistence of Trust Paradox:** A potential blind spot exists when AAL tools validate a file only at the moment it loads. If the tool "trusts" that identity implicitly for its entire lifecycle, it creates an opening for "Stains" that appear in memory after a successful border check.
 
-Inherited Trust: If an AAL policy trusts cmd.exe, and I successfully hallow it, I am effectively inheriting the reputation and permissions of that trusted identity. The "Passport" is real, but the "Person" carrying it has been replaced.
+**The Identity Lifecycle:** My research proved that for AAL to remain the gold standard, it must be viewed not just as "Execution Control," but as **Identity Lifecycle Management**. The lab showed that Airlock Digital is already capable of this. By enforcing Script Control and CLM, the tool doesn't just check the "Passport" at the door; it denies the "Traveler" the tools they need to perform a hijacking later.
 
-The Evolution of the Category: I am not suggesting that AAL should become a heavy memory scanner. Rather, I am proving that for AAL to remain the gold standard, it must evolve from "Execution Control" to "Identity Lifecycle Management."
+**Inherited Trust as a Policy Choice:** If an AAL policy trusts `cmd.exe` via a broad Path Rule, the "Passport" remains valid even if the "Person" carrying it is replaced. However, this isn't a failure of the technology; it's a strategic trade-off. The "Gap" I identified is not an architectural flaw, but a configuration choice where **Location-based Trust** is prioritized over **Context-aware Enforcement**.
 
-Research Insight: During my tests, the "Stain" injection highlights that trust cannot be a one time event. Even if a tool like Airlock Digital provides the strongest perimeter on the market by stopping the "Brush" (the script), the fact that a trusted identity can be subverted at all proves that the future of AAL lies in bridging the gap between the Disk and the Runtime.
+**Research Insight:** The "Stain" injection highlights that trust cannot be a one-time event. My testing confirmed that Airlock provides the perimeter needed to stop the "Brush" (the script) from ever reaching the canvas. The future of AAL doesn't require it to become a heavy memory scanner; it simply requires the move from "Allowing an Executable" to "Authorizing a Process State."
 
 ---
 
@@ -127,12 +127,44 @@ My research across different Windows 11 24H2 processes revealed that the "Identi
 ---
 
 ## The Airlock Encounter: Lab vs. Reality
-WORKING ON!
+
+In the final phase of my research, I moved from theoretical kernel-level analysis to a live confrontation with **Airlock Digital** in **Enforcement Mode**. This phase provided the most critical data: proving that while hallowing is a potent technique, a properly hardened AAL policy creates an environment where the attack surface is virtually non-existent.
+
+### 1. The Perimeter Block
+My initial attempts to execute the hallowing orchestrator in a default, non-privileged directory were neutralized instantly. 
+
+* **Script Control Enforcement:** When **Script Control** was enabled, the battle ended at the first line. Airlock identified the `.ps1` orchestrator as an unapproved script and **outright blocked the file from executing**.
+* **The "Audit" Nuance:** Even when Script Control was relaxed to **Audit**, the secondary gates held firm. The moment the script attempted to compile the helper DLL via `Add-Type`, Airlock identified the untrusted artifact in `\Temp` and killed the compilation process.
+* **PowerShell Constrained Language Mode (CLM):** With CLM active, the environment is effectively "Hallow-Proof." The language restriction prevents the use of Reflection or Win32 APIs, making it impossible for the script to reach out and touch the memory of another process.
+
+### 2. Identity Materialization
+To test the "Usability vs. Security" balance, I engineered a bypass using a **Safe Path**.
+
+* **The Setup:** I utilized a writeable directory (`C:\Users\Public\TestSafe`) and added it to the Airlock **Safe Path** policy. 
+* **The Materialization:** Because the path was trusted, the C# compiler was permitted to persist `HallowHelper.dll` into the public folder. 
+* **The Overrule:** In Airlock, a **Path Rule is the ultimate administrative override.** By placing my activity in this folder, the engine prioritized location-based trust over global restrictions like CLM, allowing the reflective handover to occur.
+
+### 3. The Reflection Handover
+Once the Path Rule was active, the script read the raw bytes of the materialized DLL and loaded the assembly directly into memory via `[System.Reflection.Assembly]::Load($Bytes)`. With the language barriers gone, the script successfully called the hallowing "Gates" to hijack the target process.
+
+### 4. Beyond the Default: Granular Hardening
+It is vital to note that this success occurred under a **default Path Rule configuration**. Airlock provides the granularity to lock these paths down much further. By implementing **Process and Parent-Process rules**, an organization can dictate that only specific binaries (like a signed build tool) are allowed to launch or load artifacts within that path. Once that granularity is enforced, the attack surface for hallowing effectively vanishes.
+
+| Feature | Without Safe Path (Hardened) | With Safe Path (Active) |
+| :--- | :--- | :--- |
+| **Script Control** | **Hard Block** | **Overridden** |
+| **Artifact Creation** | **Blocked** | **Succeeded** |
+| **PowerShell CLM** | **Enforced** | **Overridden** |
+| **Result** | **Secure** | **Breach Verified** |
 
 ---
-## Conclusion: From Execution Control to Identity Lifecycle
-While traditional allowlisting is often relegated to a static pre-execution check, my research highlights a critical architectural blind spot. If our 'Trust' is based solely on a disk-bound signature or hash, that trust becomes a weapon in the hands of a hallowing attack.
 
-By demonstrating the 'Stain' on a live VM, I am proving that the next generation of AAL must move beyond the disk. To truly protect an identity, the allowlisting philosophy must extend into the runtime. We shouldn't just be 'Allowing an Executable'; we should be 'Authorizing a Process State'.
+## Conclusion: Bridging the Gap
+This research demonstrates that Airlock Digital is exceptionally effective at preventing advanced attacks like process hallowing. When its core features (Script Control, CLM, and Deny-by-Default) are active, the orchestrator is neutralized long before it can "Stain" a trusted identity.
 
-The "Gap" remains if you were to use a "Trusted" tool (like a vulnerable signed driver or an allowed admin tool) to perform the hallow.
+However, the "Airlock Encounter" also highlights the strategic trade-offs companies make for developer agility. Path Rules are a vital usability feature, but they delegate security decisions to the **NTFS Permissions** of that folder. If a Safe Path is writeable by a standard user, it becomes a "VIP Lane" where identity and intent are no longer scrutinized.
+
+### The Future of the Category
+To maintain the gold standard, AAL must continue to bridge the gap between the Disk and the Runtime. While Airlock provides the strongest perimeter on the market, there is an opportunity to evolve toward **Context-aware Path Management**. 
+
+By making granular controls (like parent-process associations and temporary developer "lease" rules) easier to manage, organizations can grant technical teams the freedom they need without opening the door to the "Identity Materialization" techniques demonstrated here. Ultimately, true security isn't just about **Allowing an Executable**; it's about **Authorizing a Process State**.
