@@ -17,15 +17,18 @@ Airlock Digital is widely recognized as the gold standard in this space precisel
 ---
 
 ## The AAL Gap: A Matter of Configuration
-Most practitioners view Process Hallowing strictly as an EDR problem because traditional Application Allowlisting (AAL) is often seen as a static "Gatekeeper" focused on the disk. My research was designed to test this: Can a trusted identity be subverted after the "Border Control" has let it through?
 
-**The Persistence of Trust Paradox:** A potential blind spot exists when AAL tools validate a file only at the moment it loads. If the tool "trusts" that identity implicitly for its entire lifecycle, it creates an opening for "Stains" that appear in memory after a successful border check.
+Most practitioners view Process Hallowing strictly as an EDR problem. My research was designed to test whether that assumption holds when a well-configured AAL solution is in the picture.
 
-**The Identity Lifecycle:** My research proved that for AAL to remain the gold standard, it must be viewed not just as "Execution Control," but as **Identity Lifecycle Management**. The lab showed that Airlock Digital is already capable of this. By enforcing Script Control and CLM, the tool doesn't just check the "Passport" at the door; it denies the "Traveler" the tools they need to perform a hijacking later.
+The short answer: it largely does not.
 
-**Inherited Trust as a Policy Choice:** If an AAL policy trusts `cmd.exe` via a broad Path Rule, the "Passport" remains valid even if the "Person" carrying it is replaced. However, this isn't a failure of the technology; it's a strategic trade-off. The "Gap" I identified is not an architectural flaw, but a configuration choice where **Location-based Trust** is prioritized over **Context-aware Enforcement**.
+**The Persistence of Trust Paradox:** The theoretical gap exists when an AAL tool validates a file only at load time and then implicitly trusts that identity for its entire lifecycle. This creates an opening for memory-based "Stains" that appear after a clean border check.
 
-**Research Insight:** The "Stain" injection highlights that trust cannot be a one-time event. My testing confirmed that Airlock provides the perimeter needed to stop the "Brush" (the script) from ever reaching the canvas. The future of AAL doesn't require it to become a heavy memory scanner; it simply requires the move from "Allowing an Executable" to "Authorizing a Process State."
+**What the Lab Actually Showed:** Airlock Digital, when configured correctly, closes this gap earlier than expected. Script Control and Constrained Language Mode (CLM) don't just check the passport at the door - they deny the attacker the tools required to perform a hijacking at all. The orchestration chain is neutralized before a single byte reaches process memory.
+
+**Inherited Trust as a Policy Choice:** The gap that *does* exist is not architectural - it is a configuration trade-off. When an organization uses a broad Path Rule to accommodate developer workflows, they are choosing Location-based Trust over Context-aware Enforcement. That is a legitimate business decision, but it has a specific and demonstrable consequence, which this research documents.
+
+**Research Insight:** "Authorizing a Process State" means trust must account for the Disk Identity (hash/signature), the Orchestration Path (parent process), and the Memory Intent (Win32 API access pattern). Airlock already has the controls to enforce all three. The question is whether they are turned on.
 
 ---
 
@@ -89,16 +92,50 @@ $func = [Researcher]::GetProcAddress($k32, "WinExec")
 
 Write-Host "[!] Identity Breach Successful on PID $($Victim.Id)" -ForegroundColor Green
 ```
+
+### AMSI: The First Gate
+
+Before the script could reach any Windows API, it had to get past the **Anti-Malware Scan Interface (AMSI)**. Modern AMSI doesn't just match keywords - it performs proactive buffer analysis, including de-obfuscation of Base64-encoded payloads.
+
+* **Attempt 1 - Raw DllImports:** Blocked immediately. The `VirtualAllocEx` and `CreateRemoteThread` strings are high-confidence signatures.
+* **Attempt 2 - Base64 Encoding:** Also blocked. AMSI decoded the buffer in-flight and flagged the underlying signatures before the script could execute.
+* **Attempt 3 - XOR Scrambling + String Chunking:** Passed. By splitting keywords (`"Virtual" + "AllocEx"`) and XOR-scrambling the full source array, the buffer no longer matched any known pattern. AMSI saw noise; the compiler saw valid C#.
+
+This is an important distinction: AMSI operates on *intent signatures*, not behavior. Once the entropy of the payload changes sufficiently, the scanner defers to the next layer - in this case, Airlock's runtime enforcement.
+
+---
+
 ## The Kernel Sentinel: HallowAirlock.sys
-To validate my research, I developed a custom kernel-mode driver, `HallowAirlock.sys`. The goal was not to assist the attack, but to provide a "God View" of the VM's memory and process state that user-mode security tools often miss. 
 
-By sitting in Ring 0, `HallowAirlock.sys` allowed me to monitor the lifecycle of the hallow from the inside out, ensuring I could verify exactly when and where the "Stain" was being applied.
+To validate my research from below the userland stack, I developed a custom kernel-mode driver, `HallowAirlock.sys`. The goal was not to assist the attack but to provide ground-truth visibility into the VM's memory and process state that user-mode tools cannot reliably offer.
 
-### 1. Monitoring the Handover
-The driver uses **PsSetCreateThreadNotifyRoutine**. This allows it to see every new thread born in the system. While an EDR might see a legitimate process like `cmd.exe` running, `HallowAirlock.sys` flags the thread the moment it starts at a suspicious, exported API like `WinExec` instead of a standard entry point.
+By operating at Ring 0, the driver allowed me to observe the lifecycle of the hallow as it happened, confirming exactly when and where the "Stain" was applied - independent of what Process Hacker or the Airlock agent reported.
 
-### 2. Validating the "Stain"
-Using the driver, I can perform a deep dive into the **EPROCESS** structure of the victim. By walking the Virtual Address Descriptor (VAD) tree, the driver can identify memory regions that have been modified to be executable but are not backed by a signed file on disk.
+### 1. Thread Monitoring via PsSetCreateThreadNotifyRoutine
+
+The driver registers a callback using `PsSetCreateThreadNotifyRoutine`. This fires synchronously for every new thread created in the system, giving the driver an opportunity to inspect the thread before it executes a single instruction.
+
+The key signal: legitimate threads in `cmd.exe` start within the process's own image or a known system worker (`ntdll!TppWorkerThread`, `ntdll!RtlUserThreadStart`). A hallowed thread starting at `kernel32!WinExec` with no valid call chain is immediately anomalous.
+
+### 2. VAD Tree Walking for Unmapped Executable Memory
+
+Using the driver, I walked the **Virtual Address Descriptor (VAD)** tree of the victim process to identify the memory "Stain" independent of any user-mode report.
+```c
+// Simplified: identify RWX private regions with no file backing
+if (vad->u.VadFlags.Protection == PAGE_EXECUTE_READWRITE 
+    && vad->u.FileObject == NULL) {
+    DbgPrint("[HallowAirlock] Unmapped RWX stain at %p\n", 
+             (PVOID)(vad->StartingVpn << PAGE_SHIFT));
+}
+```
+
+Any region marked executable but lacking a `FileObject` reference has no legitimate file on disk backing it. In a healthy process this should not exist. In a hallowed process, it is the physical record of the injected payload.
+
+### 3. The ETW-Ti Subscription (24H2 Finding)
+
+I also attempted to subscribe to the **Microsoft-Windows-Threat-Intelligence** provider (`f4e1897c-bb5d-5668-1123-5411bd3dedf7`) — the same telemetry channel used by top-tier EDR and security products to observe `NtCreateThreadEx`, `SetThreadContext`, and cross-process memory operations.
+
+A significant finding specific to Windows 11 24H2: `EtwTiLogCreateRemoteThread` no longer exists as an exported kernel symbol. Microsoft has consolidated remote thread telemetry into `EtwTiLogSetContextThread`. Any driver or detection rule targeting the old symbol name will silently miss injection events on this build. Detection logic needs to be updated accordingly.
 
 ## Forensic Investigation: Proving the Breach
 To verify the success of the injection, I used HallowAirlock.sys telemetry alongside Process Hacker and WinDbg to uncover the "Forensic Fingerprint" left behind by the hijacking.
@@ -110,19 +147,10 @@ The giveaway was the **Start Address.** Most legitimate threads in cmd.exe start
 
 
 
-Furthermore, the **Call Stack** for this thread was "shallow." In a legitimate execution, you would see a deep chain of function calls leading back to the main executable. Here, the thread was essentially "born in a vacuum," a primary indicator that the execution was forced by an external actor.
+Furthermore, the **Call Stack** for this thread was "shallow." In a legitimate execution, you would see a deep chain of function calls leading back to the main executable. Here, the thread started in isolation with no traceable call chain back to the process's own code, a primary indicator that the execution was forced by an external actor.
 
 ### 2. The Memory "Stain" (Process Hacker)
 In the Memory tab, I identified a 4KB region marked as Private Data and RWX. This matched the telemetry from HallowAirlock.sys perfectly: it was an unmapped, executable memory segment used for staging command strings.
-
-### 3. The 24H2 Taxonomy: Security Tier Analysis
-My research across different Windows 11 24H2 processes revealed that the "Identity" I chose to hijack determined the success of the breach. This taxonomy highlights the layering of modern Windows defenses:
-
-| Target Process | Security Tier | Result | Principal Insight |
-| :--- | :--- | :--- | :--- |
-| **CalculatorApp.exe** | AppContainer / UWP | **FAIL** | Restricted SID prevents hallowed thread from touching the filesystem. |
-| **Notepad.exe** | CFG / Hybrid | **PARTIAL** | Control Flow Guard prevents hijacking common function return addresses. |
-| **Cmd.exe** | Medium Integrity | **SUCCESS** | Standard Win32 identity allows full inheritance of user permissions. |
 
 ---
 
