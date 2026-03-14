@@ -84,6 +84,7 @@ try { Add-Type -TypeDefinition $Sig -ErrorAction SilentlyContinue } catch {}
 # 1. Targeting the Trusted Identity
 $Victim = Start-Process cmd -WindowStyle Hidden -PassThru
 $h = [Researcher]::Gate1(0x1F0FFF, $false, $Victim.Id)
+> **OpSec Note:** `0x1F0FFF` is `PROCESS_ALL_ACCESS` - maximum rights on the victim handle. This is a high-signal IOC; any competent EDR or kernel sensor watching handle acquisition will flag it. A more evasive approach requests only the minimum required rights: `PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD` (`0x000008`). For this research, full access was intentional - the goal was demonstrating the hallow, not evading telemetry.
 
 # 2. Memory Staging
 $Command = "cmd.exe /c echo Breach_Verified > C:\Users\Public\hallowed.txt"
@@ -256,6 +257,10 @@ This research demonstrates that Airlock Digital is exceptionally effective at pr
 However, the "Airlock Encounter" also highlights the strategic trade-offs companies make for developer agility. Path Rules are a vital usability feature, but they delegate security decisions to the **NTFS Permissions** of that folder. If a Safe Path is writeable by a standard user, it becomes a "VIP Lane" where identity and intent are no longer scrutinized.
 
 ### The Future of the Category
-To maintain the gold standard, AAL must continue to bridge the gap between the Disk and the Runtime. While Airlock provides the strongest perimeter on the market, there is an opportunity to evolve toward **Context-aware Path Management**. 
+To maintain the gold standard, AAL must continue to bridge the gap between the Disk and the Runtime. While Airlock provides one of the strongest perimeters on the market, there is an opportunity to evolve toward **Context-aware Path Management**. 
 
-By making granular controls (like parent-process associations and temporary developer "lease" rules) easier to manage, organizations can grant technical teams the freedom they need without opening the door to the "Identity Materialization" techniques demonstrated here. For example: a Path Rule scoped exclusively to `msbuild.exe` as the parent process, active only during a defined build window, would have prevented every stage of the bypass demonstrated here - the compiler trick, the DLL materialization, and the reflective load - without touching developer workflow at all. Ultimately, true security isn't just about **Allowing an Executable**; it's about **Authorizing a Process State**.
+By making granular controls (like parent-process associations and temporary developer "lease" rules) easier to manage, organizations can grant technical teams the freedom they need without opening the door to the "Identity Materialization" techniques demonstrated here. For example: a Path Rule scoped exclusively to `msbuild.exe` as the parent process, active only during a defined build window, would have prevented every stage of the bypass demonstrated here - the compiler trick, the DLL materialization, and the reflective load - without touching developer workflow at all. 
+
+The immediate mitigation is straightforward: audit every Safe Path for standard-user write access, and attach a parent-process rule to any that have it. That single configuration change closes the specific attack chain demonstrated here without touching developer workflow.
+
+Ultimately, true security isn't just about **Allowing an Executable**; it's about **Authorizing a Process State**.
