@@ -1,4 +1,4 @@
-# Shadow Identities: A Researcher's Guide to Process Hallowing
+# A Researcher's Guide to Process Hallowing with Airlock Digital
 
 >**Author:** Rob Shiplo - Sr Research Engineer - Systems & Endpoint Security @ Airlock Digital
 >
