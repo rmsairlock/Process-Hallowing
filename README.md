@@ -11,6 +11,8 @@ In the world of Application Allowlisting (AAL), the philosophy has traditionally
 
 However, through my recent research, I wanted to explore a deeper question: What happens when that trusted identity, like cmd.exe or Notepad.exe, is hijacked after the "Border Control" has already let it through?
 
+---
+
 ## Beyond "Good vs. Bad" Binaries
 Airlock Digital is widely recognized as the gold standard in this space precisely because it goes beyond the binary choice of "good vs. bad" executables. While many tools stop at the perimeter, true security requires understanding that **trust is not a one time event.** If a security solution only checks the digital signature at the moment of execution, it is vulnerable to Process Hallowing. This is the "Shadow Identity" problem: the process has a trusted passport, but it is currently carrying out an unauthorized mission in memory.
 
@@ -39,7 +41,7 @@ During my research on Windows 11 24H2, I discovered that Microsoft has significa
 * **Notepad.exe (The Hybrid):** Notepad has moved toward a more modernized architecture. I hit significant roadblocks with **Control Flow Guard (CFG)** when trying to hijack its execution flow, and consider this target partially resolved — worth revisiting in future research.
 * **Cmd.exe (The Classic):** This proved to be the ideal research target. As a "Medium Integrity" process without AppContainer restrictions, it allowed the hallowed identity to perform functional tasks without kernel intervention.
 
-#### 24H2 Internals: NtCreateThreadEx Argument Passing
+### 24H2 Internals: NtCreateThreadEx Argument Passing
 
 During kernel-level analysis, I found that on Windows 11 24H2 (build 26100), `NtCreateThreadEx` no longer passes the target process handle in the expected direct register position. Instead, arguments are passed indirectly via an RSI pointer to a structured argument block. The target handle is resolved internally through `ObpReferenceObjectByHandleWithTag`.
 
